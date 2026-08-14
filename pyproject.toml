@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vla-label-audit"
+version = "0.1.0"
+description = "Measuring whether robot-learning datasets say what they think they say"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = ["numpy>=1.24", "scipy>=1.10"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.4"]
+embed = ["torch>=2.0", "transformers>=4.40", "faiss-cpu>=1.8"]
+data = ["lerobot>=0.6", "datasets>=2.19"]
+
+[tool.setuptools.packages.find]
+include = ["vla_label_audit*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
