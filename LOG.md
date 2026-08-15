@@ -115,3 +115,35 @@ widely-used LeRobot conversion of DROID drops the multi-annotator fields and bla
 instructions — a label-quality defect in the tooling layer, squarely on this project's topic.
 Whether the full `lerobot/droid` conversion shares it is UNCHECKED and must not be asserted;
 verifying it costs one cheap metadata pull and is logged as an open follow-up for the owner.
+
+**2026-08-15 — Stage B ran, was verified, and its premise was INVALIDATED at Gate B. HARD STOP;
+Stage C not started; awaiting a human.** Embedded all 546,930 LIBERO images with DINOv2 ViT-S/14
+and CLIP ViT-B/32 (~87 min on MPS; MPS-vs-CPU agreement to fp32 noise after pinning preprocessing
+to CPU, since the MPS bicubic resize disagrees with the CPU kernel by ~0.35 and would have made
+the check measure the resampler; alignment verified with ±1 and +50-row shift controls). Ran the
+reframed battery, then three adversarial verifiers. **All arithmetic reproduced independently**
+— views rebuild bit-exactly, purity/chance/nonzero-counts/tail-stats/swap-metrics all match, CCA
+held-out path confirmed leak-free (permutation control 0.9925→0.025). **But two of the three
+substantive claims were refuted, and the premise was killed.** (1) Task purity 0.9976 is computed
+from `task_index` and is *bit-identically* invariant to permuting task ids or replacing all 40
+instructions with nonsense — it never reads the language; an 8×8 RGB thumbnail (192 numbers, no
+network) reaches 0.9988, matching DINOv2; "40× chance" is the arithmetic ceiling. (2) The swap
+calibration is correct arithmetic but proves nothing about embeddings — a trivial `task_index`
+mismatch rule using no language embedding and no cosine distance gets AUC 1.0000, beating the
+ensemble's 0.9975 — and under **correlated corruption (a whole task relabelled) the detector is
+at pure chance, AUC 0.487–0.511, P@50 0.03–0.19**. That last number decided the gate: it is the
+failure mode real annotation pipelines produce, and the method is structurally blind to it
+because when neighbours share the wrong label, disagreement is zero by construction. Also: the
+detector is degenerate on unmodified LIBERO (98/1,693 nonzero, 1,595 exactly tied, 23 flagged by
+both encoders); manual inspection of the top 50 contact sheets found **0 wrong labels, 0 rare
+behaviours, ~50 detector artifacts** from visually ambiguous task families — uninformative about
+precision, since recall of an empty set is undefined; cross-encoder tail agreement is worse than
+Stage A (Spearman 0.361, top-200 overlap 0.20). Premise-checker: LIBERO was **structurally** the
+wrong validation corpus — its 40 instructions are in bijection with `task_index`, so the
+cross-modal apparatus collapses into a lookup and cannot discriminate the hypothesis from the
+null "the dataset has 40 blocks". What survived: a real trajectory-dependent signal (LIBERO-Goal
+frame-0 0.108 → full 1.000) and confusions landing on semantically near instructions (0.771 vs
+0.444). **No positive Stage B number transfers to DROID.** Stage A's headline is untouched as a
+measurement. Owner-facing options (converging negative result as a contribution; DROID base-rate
+human audit; paraphrase-cost experiment; rate × correlation noise family for any Stage C) are
+recorded at the end of `results/stage-B.md` as questions, not decisions.

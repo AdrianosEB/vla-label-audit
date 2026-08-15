@@ -65,6 +65,48 @@ table and verifier verdicts in `results/stage-A.md`; raw output in `data/encoder
 - Gate A premise check: **WEAKENED** — the paraphrase-gap thesis holds, but Stage B's
   per-episode-ranking method inherits the instability above; see the revision note in Stage B.
 
+**Stage B (LIBERO cross-modal audit) — RAN, VERIFIED, PREMISE INVALIDATED.** Full report in
+`results/stage-B.md`; raw output in `data/libero_crossmodal.json`. 1,693 episodes, 546,930
+images embedded with DINOv2 ViT-S/14 and CLIP ViT-B/32. All arithmetic independently
+reproduced. **The stage failed, and that is the finding.**
+
+- **Detector is at chance against the realistic failure mode.** Correlated corruption — a whole
+  task relabelled with one wrong instruction, what a real pipeline produces from one bad
+  annotator or template — gives **AUC 0.487–0.511, precision@50 0.03–0.19**. Structural, not
+  incidental: when an episode's neighbours carry the same wrong label, neighbourhood
+  disagreement is zero by construction. **The method finds isolated label errors and is blind
+  to systematic ones.** This is a property of the method family, and it applies to DROID
+  wherever mislabeling is batched.
+- **The easy calibration proves nothing about embeddings.** Uniform cross-task swaps are
+  recovered at AUC 0.996–0.998 / P@50 1.000, but a trivial rule using **no language embedding
+  and no cosine distance** — flag any episode whose `task_index` differs from its visual
+  neighbours' — gets **AUC 1.0000**, strictly better. Harder swaps degrade it to 0.955
+  (visually nearest task) and 0.913 (semantically nearest).
+- **Task purity 0.9976 does not mean what it looks like.** It is computed from the integer
+  `task_index` and is **bit-identically invariant** to permuting the task ids or replacing all
+  40 instructions with nonsense strings — it never reads the language. And an **8×8 RGB
+  thumbnail (192 numbers, no network) reaches 0.9988**, matching DINOv2. Against chance 0.0248
+  the ratio is capped at 40.31, so "≈40× chance" is the arithmetic ceiling and carries no
+  information. Held-out CCA 0.9925 is the same fact restated (vision vs one-hot task = 0.9936).
+- **What genuinely survived:** a real trajectory-dependent signal (LIBERO-Goal frame-0 purity
+  0.108 → full-episode 1.000, 0.956 on the first 75% of each episode), and visual confusions
+  landing on semantically near instructions (MiniLM cosine 0.771 vs 0.444 random) — the one
+  statistic in the stage that reads the instruction text and is positive.
+- **Detector is degenerate on unmodified LIBERO:** only **98 of 1,693** episodes score nonzero,
+  1,595 exactly tied at zero, only **23 flagged by both encoders**. Manual inspection of the
+  top 50: **0 wrong labels, 0 rare behaviours, ~50 detector artifacts** — all from visually
+  ambiguous task families. Uninformative about precision: recall of an empty set is undefined.
+- **Cross-encoder tail instability, worse than Stage A:** Spearman 0.361, top-50 overlap 0.34,
+  **top-200 overlap 0.20** (vs Stage A's 0.88–0.94 / 47–57%). A "top-N suspicious episodes"
+  deliverable is not well-defined.
+- **LIBERO was structurally the wrong validation corpus.** Its 40 instructions are in bijection
+  with `task_index` and near-bijection with scene identity, so "language neighbourhood" reduces
+  to "`task_index` equality class" and the method collapses into a lookup — it cannot
+  discriminate the hypothesis from the null "the dataset has 40 blocks". DROID has 64,516
+  unique strings and no `task_index`, so neither pathology exists there.
+- **None of Stage B's positive numbers transfer to DROID.** AUC 0.996–0.998, P@50 1.000, and
+  purity 0.9976 must not be carried into a DROID claim in any form.
+
 **Defect classes and their cost to α**
 
 | Class | n | α excluding | Δ |
@@ -130,10 +172,11 @@ if the embedding-distance approach is shakier than it looks, that has to be know
 
 ---
 
-## Stage B — LIBERO cross-modal audit
+## Stage B — LIBERO cross-modal audit  ❌ ran; premise INVALIDATED at Gate B (see state above and `results/stage-B.md`)
 
 *Only after Gate A.* Goal: move from "do annotators agree with each other" to "does the label
-describe the trajectory".
+describe the trajectory". **This goal was not achieved. The brief below is retained as the
+record of what was run, not as instructions to re-run.**
 
 **Brief revision required by Gate A (premise WEAKENED; approach approved by owner):**
 per-episode embedding-disagreement rankings are only neighborhood-stable across encoders
@@ -251,7 +294,30 @@ headline limitation, and the `droid_100` real-data spot-check reported or marked
 
 ---
 
-## Stage C — what does label noise cost?
+## Stage C — what does label noise cost?  🛑 BLOCKED — do not start; awaiting a human decision
+
+**Hard stop in force.** The Gate B premise-checker returned INVALIDATED, and per
+`ORCHESTRATION.md` that halts autonomous work until a human decides. Stage C as written has
+also lost both halves of its deliverable and **must not be run in its current form**:
+
+- *"Convert a measured noise rate into a predicted performance cost"* requires a measured noise
+  rate. Stage B was to supply it and cannot.
+- A scalar rate is now known to be the **wrong parameter**. i.i.d. uniform label noise is the
+  easiest kind for a policy to absorb — unbiased, averages toward the mean — while correlated
+  noise teaches a confident wrong mapping. A curve fitted on i.i.d. injection would
+  *under*-estimate the cost of real noise, reproducing Stage B's error in a more expensive
+  medium.
+
+If a Stage C is authorised it needs a **rate × correlation-structure** family, not a scalar:
+i.i.d. uniform swap (optimistic bound), semantically-near swap, block relabeling (pessimistic
+bound), and paraphrase-only perturbation. Owner-facing options — including a ~200-episode human
+base-rate audit of DROID, and the paraphrase-cost experiment that follows from Stage A's
+verified result and needs no working detector — are listed at the end of `results/stage-B.md`.
+They are recorded there as questions, not decisions.
+
+---
+
+### Original Stage C brief, retained for reference
 
 *Only after Gate B.* Descriptive results become a causal claim here.
 
