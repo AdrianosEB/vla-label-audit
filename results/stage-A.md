@@ -106,6 +106,33 @@ Per-lab αs, pairwise lab-rank Spearman (0.79–0.99), and per-episode rank Spea
 - Tie-removal lowers α by ~0.018 uniformly across encoders — a clean robustness row for
   the paper.
 
+## Standalone methodological finding: single-encoder tail rankings are ~50% unstable
+
+This is a finding in its own right, not merely a constraint on Stage B. Between any two of
+the four neural encoders — encoders that agree on the aggregate α to within 0.012 — the
+top-200 worst-episode lists share only 47–57% of their members, and ordering *within* the
+tail is nearly uncorrelated (tail-only Spearman 0.06–0.31). What does transfer is
+neighborhood membership: 93–99% of any encoder's top-200 lies inside another's top-2000
+(top 5%), with a median cross-encoder rank of 152–220 out of 37,592. The instability is
+not a tie artifact (it persists on the 32,555 episodes with no internal exact ties).
+
+The general form: **an aggregate statistic being encoder-robust says nothing about the
+tail of the per-item ranking being encoder-robust.** Any pipeline that ranks items by
+embedding disagreement and consumes a top-k list — data-cleaning worklists,
+active-learning queues, "worst examples" tables in papers — inherits roughly 50% churn at
+the tail from encoder choice alone, invisible if only the aggregate is checked.
+
+**This applies retroactively to this project's own Session-1 artifact:** the
+`worst_episodes` list (top 200) in `data/droid_agreement_results.json` is MiniLM-only and
+must be treated as a sample from the high-disagreement pool, not as a ranking — expect
+roughly half its membership to be MiniLM-specific. Any episode list released with the
+paper will be recomputed by rank-averaging per-episode disagreement across the four
+cached neural encoders, with the instability stated.
+
+**Decision (approved at Gate A):** ensemble suspect selection uses rank-averaging across
+encoders, not intersection of top-K sets. The per-lab claim is worded as: GuptaLab
+uniquely on top, {CLVR, RAIL} the low cluster.
+
 ## Premise check (Gate A)
 
 Verdict: **WEAKENED** — fresh premise-checker, minimal context. Deciding number:

@@ -57,7 +57,11 @@ table and verifier verdicts in `results/stage-A.md`; raw output in `data/encoder
   uniformly and leaves the band width unchanged.
 - **Per-episode worklists are only neighborhood-stable across encoders**: top-200 overlap
   47–57%, tail-only Spearman 0.06–0.31, but 93–99% of any top-200 lies in another encoder's
-  top-2000. Suspect lists are a high-disagreement *pool*, not a precise ranking.
+  top-2000. Suspect lists are a high-disagreement *pool*, not a precise ranking. This is a
+  standalone methodological finding (see `results/stage-A.md`), and it applies retroactively
+  to the Session-1 `worst_episodes` list in `data/droid_agreement_results.json`, which is
+  MiniLM-only: treat it as a pool sample; any released list is to be recomputed by
+  rank-averaging across the four cached neural encoders.
 - Gate A premise check: **WEAKENED** — the paraphrase-gap thesis holds, but Stage B's
   per-episode-ranking method inherits the instability above; see the revision note in Stage B.
 
@@ -131,13 +135,14 @@ if the embedding-distance approach is shakier than it looks, that has to be know
 *Only after Gate A.* Goal: move from "do annotators agree with each other" to "does the label
 describe the trajectory".
 
-**Brief revision required by Gate A (premise WEAKENED):** per-episode embedding-disagreement
-rankings are only neighborhood-stable across encoders (top-200 overlap 47–57%), and cross-modal
-text–image spaces are likely less stable than the same-modality encoders tested. Do **not** draw
-the suspect list from a single encoder's ranking: use a consensus/ensemble rank or intersection
-of top-N lists across ≥2 vision-language encoders, treat tail *membership* as the operative
-guarantee, and budget the manual inspection expecting roughly half of any single-model top-50 to
-be encoder-specific noise.
+**Brief revision required by Gate A (premise WEAKENED; approach approved by owner):**
+per-episode embedding-disagreement rankings are only neighborhood-stable across encoders
+(top-200 overlap 47–57%), and cross-modal text–image spaces are likely less stable than the
+same-modality encoders tested. Do **not** draw the suspect list from a single encoder's
+ranking: **rank-average the per-episode disagreement across ≥2 vision encoders** (owner chose
+rank-averaging over top-K intersection), treat tail *membership* as the operative guarantee,
+and budget the manual inspection expecting roughly half of any single-model top-50 to be
+encoder-specific noise.
 
 **Dataset: `lerobot/libero`** — 1.94 GB, 1,693 episodes, 273,465 frames, 2 cameras (546,930
 images), 40 distinct instructions. Not the 69.86 GB or 34.94 GB variants; identical content,

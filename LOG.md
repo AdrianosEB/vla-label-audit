@@ -52,3 +52,15 @@ disagreement sits exactly at the granularity that proved unstable; its brief now
 ensemble/consensus suspect selection across ≥2 vision encoders. ROADMAP state updated (incl.
 correcting the 0.8109→0.8107 CI transcription typo); full report in `results/stage-A.md`.
 Stopped at Gate A per instruction — Stage B not started.
+
+**2026-08-15 — Gate A approved by owner; Stage B opened under revised brief.** Owner decisions:
+(1) ensemble suspect selection by **rank-averaging** across encoders, not top-K intersection;
+(2) lab claim worded as "GuptaLab uniquely on top, {CLVR, RAIL} the low cluster"; (3) the
+tail-instability caveat applies retroactively to Session 1's MiniLM-only `worst_episodes`
+list in `data/droid_agreement_results.json` — treat as pool sample, recompute any released
+list by rank-average over the four cached encoders; (4) tail instability recorded as a
+standalone methodological finding in `results/stage-A.md`. Stage B plan per ROADMAP + revised
+brief: acquire `lerobot/libero` (1.94 GB), embed 546,930 images with DINOv2 ViT-S/14 plus a
+second vision encoder for the ensemble, build the joint exact-search index, run the
+crossmodal battery, rank suspects by cross-encoder rank-average, inspect top ~50, verify
+adversarially, premise-check, stop at Gate B.
