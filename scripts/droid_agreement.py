@@ -22,7 +22,10 @@ Run:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import re
+import ssl
 import time
 import urllib.request
 from pathlib import Path
@@ -52,8 +55,18 @@ def fetch_annotations() -> dict:
     if not path.exists():
         print(f"downloading annotations (~12 MB) from\n  {ANNOTATION_URL}")
         try:
-            urllib.request.urlretrieve(ANNOTATION_URL, path)
+            # The python.org build on macOS ships no CA bundle of its own, so a
+            # plain urlretrieve dies with CERTIFICATE_VERIFY_FAILED unless the
+            # user has run "Install Certificates.command". certifi is already a
+            # transitive dependency (via requests/huggingface-hub), so trusting
+            # its bundle explicitly makes this work on a fresh checkout.
+            import certifi
+
+            ctx = ssl.create_default_context(cafile=certifi.where())
+            with urllib.request.urlopen(ANNOTATION_URL, context=ctx) as resp:
+                path.write_bytes(resp.read())
         except Exception as exc:  # noqa: BLE001 - surface the real cause to the user
+            path.unlink(missing_ok=True)  # never leave a truncated file behind
             raise SystemExit(
                 f"download failed: {exc}\n\n"
                 "Fallback, if you have the Google Cloud SDK:\n"
@@ -63,12 +76,32 @@ def fetch_annotations() -> dict:
     return json.loads(path.read_text())
 
 
+_WHITESPACE = re.compile(r"\s+")
+
+
+def normalize(text: str) -> str:
+    """Collapse every run of whitespace to a single space, then strip.
+
+    The real annotation file is dirtier than the schema suggests: 794 strings
+    carry a trailing newline, 267 contain a double space, and one has a newline
+    in the middle of a sentence. `nominal` agreement compares strings exactly,
+    so without this two annotators who typed the *same* instruction but differed
+    by a stray space are scored as disagreeing -- 93 distinct strings across the
+    full file collapse once the whitespace is regularised. The embedding path is
+    largely insensitive to this, which is exactly why it would have gone unnoticed.
+    """
+    return _WHITESPACE.sub(" ", text).strip()
+
+
 def flatten(raw: dict, limit: int | None = None) -> tuple[np.ndarray, list[str], np.ndarray]:
     """One row per annotation. Returns (episode_ids, texts, annotator_slots).
 
     Empty and whitespace-only instructions are dropped rather than embedded --
     an empty string has no meaningful direction in embedding space, and
     counting it as disagreement would inflate the result.
+
+    A slot may also be absent entirely: 12,500 of the 50,092 episodes carry only
+    `language_instruction1`, so `.get` (not `[...]`) is load-bearing here.
     """
     episodes, texts, slots = [], [], []
     dropped_empty = 0
@@ -76,7 +109,7 @@ def flatten(raw: dict, limit: int | None = None) -> tuple[np.ndarray, list[str],
         if limit and i >= limit:
             break
         for slot in (1, 2, 3):
-            text = (fields.get(f"language_instruction{slot}") or "").strip()
+            text = normalize(fields.get(f"language_instruction{slot}") or "")
             if not text:
                 dropped_empty += 1
                 continue
@@ -84,12 +117,28 @@ def flatten(raw: dict, limit: int | None = None) -> tuple[np.ndarray, list[str],
             texts.append(text)
             slots.append(slot)
     if dropped_empty:
-        print(f"  dropped {dropped_empty:,} empty instruction slots")
+        print(f"  dropped {dropped_empty:,} empty or missing instruction slots")
     return np.array(episodes), texts, np.array(slots)
 
 
+def corpus_tag(texts: list[str]) -> str:
+    """Cache key that changes whenever the corpus does.
+
+    Keying on `len(texts)` alone is not safe: a change to parsing that rewrites
+    text without adding or removing rows -- whitespace normalisation, say --
+    keeps the count identical and would silently reload embeddings of the *old*
+    strings. Hashing the content makes a stale cache impossible rather than
+    unlikely, and the model name is included so swapping encoders re-embeds too.
+    """
+    h = hashlib.sha256(MODEL.encode())
+    for t in texts:
+        h.update(t.encode("utf-8"))
+        h.update(b"\0")
+    return f"{len(texts)}_{h.hexdigest()[:12]}"
+
+
 def embed(texts: list[str], tag: str) -> np.ndarray:
-    """Sentence embeddings, cached to disk keyed by corpus size."""
+    """Sentence embeddings, cached to disk keyed by corpus content."""
     CACHE.mkdir(exist_ok=True)
     path = CACHE / f"embeddings_{tag}.npy"
     if path.exists():
@@ -126,7 +175,7 @@ def main() -> None:
     for k in sorted(set(counts.tolist())):
         print(f"    {int((counts == k).sum()):,} episodes with {k} annotation(s)")
 
-    emb = embed(texts, tag=f"{len(texts)}")
+    emb = embed(texts, tag=corpus_tag(texts))
 
     print("\n" + "=" * 66)
     print("DO THE ANNOTATORS AGREE?")
@@ -161,6 +210,10 @@ def main() -> None:
     print("\n" + "=" * 66)
     print("BY LAB")
     print("=" * 66)
+    # Each lab gets its own episode-clustered bootstrap. The per-lab samples are
+    # one to two orders of magnitude smaller than the corpus, so their intervals
+    # are correspondingly wider -- reading a ranking off the point estimates
+    # alone would invent a lab-quality ordering the data does not support.
     labs = np.array([e.split("+")[0] for e in episodes])
     rows = []
     for lab in np.unique(labs):
@@ -168,13 +221,34 @@ def main() -> None:
         if len(set(episodes[m].tolist())) < 30:
             continue
         try:
-            rows.append((lab, alpha_semantic(episodes[m], emb[m])))
+            res = alpha_semantic(episodes[m], emb[m])
+            _, lab_lo, lab_hi = bootstrap_alpha_semantic(
+                episodes[m], emb[m], n_boot=args.boot, seed=0
+            )
         except ValueError:
             continue
-    for lab, res in sorted(rows, key=lambda r: r[1].alpha)[:12]:
-        print(f"  {lab:<22} alpha {res.alpha:+.4f}   ({res.n_units:,} episodes)")
+        rows.append((lab, res, lab_lo, lab_hi))
+    rows.sort(key=lambda r: r[1].alpha)
+    for lab, res, lab_lo, lab_hi in rows[:12]:
+        print(
+            f"  {lab:<10} alpha {res.alpha:+.4f}  95% CI [{lab_lo:+.4f}, {lab_hi:+.4f}]"
+            f"   ({res.n_units:,} episodes)"
+        )
     if len(rows) > 12:
         print(f"  ... {len(rows) - 12} more labs")
+
+    if len(rows) >= 2:
+        worst, best = rows[0], rows[-1]
+        # Non-overlap of two marginal intervals is a conservative test of a
+        # difference, and this is the extreme pair out of len(rows) labs chosen
+        # after seeing the data -- so treat a bare non-overlap as suggestive.
+        verdict = (
+            "do not overlap -- the spread across labs is larger than sampling noise"
+            if worst[3] < best[2]
+            else "overlap -- the ordering of labs is not resolved at this sample size"
+        )
+        print(f"\n  extremes ({worst[0]} vs {best[0]}) {verdict}")
+        print(f"  note: extreme pair selected post hoc from {len(rows)} labs; not a corrected test")
 
     print("\n" + "=" * 66)
     print(f"THE {args.top} EPISODES WHERE ANNOTATORS DISAGREED MOST")
@@ -201,7 +275,10 @@ def main() -> None:
                 "expected_disagreement": sem.expected,
                 "unique_string_fraction": uniq / len(texts),
                 "effective_rank": effective_rank(emb),
-                "per_lab_alpha": {lab: r.alpha for lab, r in rows},
+                "per_lab_alpha": {
+                    lab: {"alpha": r.alpha, "ci": [lab_lo, lab_hi], "n_episodes": int(r.n_units)}
+                    for lab, r, lab_lo, lab_hi in rows
+                },
                 "worst_episodes": dict(sorted(scores.items(), key=lambda kv: -kv[1])[:200]),
             },
             indent=2,
