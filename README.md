@@ -228,6 +228,67 @@ M2 Pro across both encoders).
 .venv/bin/python scripts/libero_crossmodal.py --analyze
 ```
 
+## Vector search
+
+A FAISS index over the cached embeddings, for exploring the corpus rather than for producing
+any number in the analysis. Three modes: text → DROID episodes, text → LIBERO frames
+(CLIP text tower into the CLIP image space), and episode → similar episodes.
+
+```bash
+.venv/bin/python scripts/build_index.py --which all     # ~5 s, writes data/index/ (gitignored)
+
+.venv/bin/python scripts/search.py --text-to-episodes "pick up the mug and put it in the sink"
+.venv/bin/python scripts/search.py --text-to-frames "a robot arm picking up a black bowl"
+.venv/bin/python scripts/search.py --episode-similar "PennPAL+acda9df3+2023-06-25-18h-18m-03s"
+.venv/bin/python scripts/search.py --text-to-episodes "..." --ivf --nprobe 32   # approximate
+```
+
+DROID results carry each annotation's lab and its episode's disagreement score, so a search
+doubles as a way to look at how differently three annotators described the same clip.
+
+**Exact is the default; approximate is opt-in.** The analysis uses exact search everywhere
+because at this scale brute force costs milliseconds and exactness pre-empts the "did ANN
+recall cause that result?" objection before a reviewer can raise it — whereas the interactive
+tool can trade a little recall for a ~10–140× latency drop, which is why the benchmark below
+scores IVF *against* exact rather than replacing it.
+
+| index | method | recall@10 | median ms | p95 ms |
+|---|---|---|---|---|
+| droid_text (125,276 × 384, nlist 350) | **exact** | 1.000 | 3.992 | 4.087 |
+| droid_text | ivf nprobe=1 | 0.8640 | 0.027 | 0.054 |
+| droid_text | ivf nprobe=8 | 0.9725 | 0.117 | 0.157 |
+| droid_text | ivf nprobe=32 | 0.9905 | 0.395 | 0.455 |
+| droid_text | ivf nprobe=64 | 0.9935 | 0.817 | 0.908 |
+| libero_frame (273,465 × 512, nlist 520) | **exact** | 1.000 | 10.792 | 11.124 |
+| libero_frame | ivf nprobe=1 | 0.7310 | 0.047 | 0.065 |
+| libero_frame | ivf nprobe=8 | 0.9905 | 0.212 | 0.280 |
+| libero_frame | ivf nprobe=32 | 1.0000 | 0.765 | 0.958 |
+| libero_frame | ivf nprobe=64 | 1.0000 | 1.524 | 1.743 |
+
+200 random queries drawn from the indexed vectors, k=10, single-threaded, exact
+`IndexFlatIP` as ground truth; recall is top-10 set overlap. The two 1.0000 rows are exact
+(2000/2000), not rounded — LIBERO's nearest neighbours are usually temporally adjacent frames
+of the same episode, which land in the same IVF cell. Raw output in `data/index/benchmark.json`.
+
+Two implementation notes that will bite anyone reusing this:
+
+- **`torch` and `faiss-cpu` cannot share one interpreter here** — both ship their own libomp on
+  macOS and whichever enters a parallel region second dies with a bare SIGSEGV, no traceback.
+  `faiss.omp_set_num_threads(1)`, `torch.set_num_threads(1)` and `KMP_DUPLICATE_LIB_OK` do not
+  help. `search.py` therefore embeds each query in a child process that imports torch and never
+  faiss, while the parent imports faiss and never torch.
+- **`CLIPModel.get_text_features` is a silent-corruption trap on transformers 5.15**: it returns
+  a pooled output whose `pooler_output` is the *pre*-projection hidden state, which is also
+  512-d for ViT-B/32 — so it would index cleanly and return confident nonsense. Use
+  `CLIPTextModelWithProjection` → `.text_embeds`, the true counterpart of the cached
+  `image_embeds`.
+
+Text → frame retrieval on LIBERO is visibly weak (queries return plausible-but-wrong episodes
+at similarities clustered near 0.36). The plumbing is verified — correct projected tower, both
+sides L2-normalised, IVF recall 1.000 against exact — so this reflects CLIP's alignment on
+simulated robot footage. It is an observation about this corpus and this encoder, not a
+measurement, and nothing in the audit depends on it.
+
 ## How this repository is organised
 
 | Path | What it is |
