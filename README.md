@@ -1,123 +1,248 @@
 # vla-label-audit
 
-**Do robot-learning datasets say what they think they say?**
+**Do the natural-language labels in robot-learning datasets actually describe the trajectories
+they are attached to?**
 
 Vision-language-action models are known to largely ignore the language they are given.
-[RoboSemanticBench](https://arxiv.org/html/2606.02277) finds models grasping successfully 80–100%
-of the time while completing the *commanded* task only 2–21% of the time, with normalized
-semantic grounding near or below zero — they pick targets close to randomly.
+[RoboSemanticBench](https://arxiv.org/html/2606.02277) reports 80–100% grasp success but only
+2–21% *commanded-task* success. The field reads that as an architecture problem. Before
+accepting that, it is worth checking something cheaper: **were the training labels correct in
+the first place?** Nobody had measured it. This repository measures it.
 
-The field reads this as an architecture problem. Nobody has checked whether the labels those
-models trained on were correct in the first place.
+The short answer, on DROID: the labels are **not** unreliable — annotators agree on meaning at
+Krippendorff's α = 0.81. What they almost never do is agree on *wording*. That gap is the
+finding.
 
-## Why nobody has checked, and why they can now
+---
 
-[Wanna et al. (2026)](https://arxiv.org/html/2601.03136v1) measured the *text* of embodied-AI
-datasets and found under 2% of instructions are unique, and that RT-1 uses **49 unique words
-across 3.7M+ sentences**. They state explicitly that cross-modal alignment and annotation
-correctness are outside their scope, and name detecting "inconsistencies between commands and
-the corresponding trajectories" as future work.
+## Headline results
 
-Meanwhile [DROID](https://droid-dataset.github.io/) collected **up to three independent
-crowdsourced instructions per episode** — the published annotation file carries on the order of
-50,000 entries — and reported no inter-annotator agreement number, no error rate, and no
-quality validation for language at all. (The paper claims coverage of 95% of successful
-episodes; the released file is smaller than that implies, which is itself worth reporting.)
+Measured on the full DROID annotation file: **50,092 episodes, 125,276 annotations**, of which
+37,592 episodes are triple-annotated.
 
-The measuring instrument is sitting in a public dataset, unused.
-
-## What this package does
-
-| Module | Question it answers |
+| Quantity | Value |
 |---|---|
-| `agreement.py` | Do independent annotators describe the same episode the same way? |
-| `crossmodal.py` | Does the label describe the trajectory it is attached to? |
-| `noise.py` | What does a given rate of label noise actually cost a policy? |
+| **Semantic α** (all-MiniLM-L6-v2) | **0.8125**, 95% CI [0.8107, 0.8140] |
+| Nominal α (exact string match) | 0.0536 |
+| **Paraphrase gap** (semantic − nominal) | **0.7589** |
+| Lexical floor (TF-IDF cosine) | 0.6310, 95% CI [0.6285, 0.6334] |
+| Unique instruction strings | 64,516 / 125,276 (51.5%) |
 
-### Agreement on free text
+To our knowledge this is the **first inter-annotator agreement measurement for natural-language
+annotation in a robot-learning dataset.** (See *Limitations* — the novelty search predates
+submission and should be re-run.)
 
-Standard agreement statistics assume categorical labels. These are sentences — "pick up the
-red mug" and "grab the mug" agree; "move the arm left" does not, and no categorical statistic
-can see the difference.
+### 1. The number is a property of the data, not of one embedding model
 
-Krippendorff's alpha is defined over an *arbitrary* difference function, so supplying cosine
-distance between sentence embeddings turns it into a measure of whether annotators described
-the same behaviour rather than typed the same string. Reporting semantic alpha next to nominal
-alpha isolates paraphrase from real disagreement — the gap between them *is* the paraphrase
-rate.
+Every α here is a Krippendorff's α whose difference function is cosine distance between
+sentence embeddings — so the obvious objection is that it measures the encoder, not the
+annotators. It does not. Five encoder arms were run over the full corpus; the four neural
+encoders land in a band **0.012 wide**:
 
-```python
-from vla_label_audit import krippendorff_alpha, cosine_distance_matrix, exact_match_distance_matrix
+| Encoder | dims | Semantic α | 95% CI |
+|---|---|---|---|
+| all-MiniLM-L6-v2 | 384 | 0.8125 | [0.8107, 0.8140] |
+| all-mpnet-base-v2 | 768 | 0.8218 | [0.8200, 0.8235] |
+| gte-base | 768 | 0.8095 | [0.8078, 0.8110] |
+| bge-large-en-v1.5 | 1024 | 0.8165 | [0.8146, 0.8180] |
+| *TF-IDF (deliberate lexical floor)* | 2442 | *0.6310* | *[0.6285, 0.6334]* |
 
-semantic = krippendorff_alpha(episode_ids, cosine_distance_matrix(annotation_embeddings))
-nominal  = krippendorff_alpha(episode_ids, exact_match_distance_matrix(annotation_texts))
-```
+Report α ≈ 0.81 **with the band, never with a single arm's CI** — encoder choice contributes
+roughly 4× the sampling uncertainty, and the arms differ significantly from one another even
+while agreeing practically. The claim is scoped to contrastively-trained sentence-encoder
+families; no decoder-LM embedder was tested.
 
-### Cross-modal audit
+α is also not an artifact of embedding geometry: expected disagreement `D_e` spans 20× across
+the arms (0.040 to 0.818) while neural α moves 0.012, and the most anisotropic encoder produces
+the *lowest* α — the opposite of mechanical inflation.
 
-One index over episodes with three aligned views — what the camera saw, what the arm did, what
-the label says — and every question becomes a nearest-neighbour query.
+### 2. The paraphrase gap
 
-- `neighborhood_disagreement` — if an episode's *behavioural* neighbours all carry a different
-  label than it does, either the label is wrong or the episode is genuinely rare. Both are
-  worth surfacing. This is confident learning transplanted to free-text labels over
-  trajectories, and it needs no ground truth.
-- `neighborhood_overlap` / `rank_correlation_across_views` — corpus-wide: are visual neighbours
-  language neighbours at all?
-- `cca_alignment` — is there *any* linear map under which vision and language correspond?
-  Canonical correlations near zero is a far stronger negative than low local overlap, and CCA
-  is invariant to invertible linear reparameterization, so one encoder scaling its outputs
-  differently cannot fake it (tested).
-- `effective_rank` — a corpus advertising 160,000 tasks whose instruction embeddings span 8
-  directions does not have 160,000 tasks. It has 8 templates and a lot of paraphrase.
+Annotators overwhelmingly mean the same thing (0.81) and almost never say it the same way
+(0.054). The gap survives every encoder (0.756–0.768). It is not a formatting artifact:
+lowercasing moves nominal α to 0.0538, additionally stripping punctuation to 0.0577. On
+episodes containing no identical-string pairs at all, nominal α is ≈0.000 while semantic α is
+still 0.79–0.80.
 
-### From description to causation
+Contrast RT-1, which has <2% unique instructions and 49 unique words across 3.7M sentences.
+Two opposite pathologies: **RT-1 too templated to teach language, DROID too varied to give
+repeated signal per phrasing.**
 
-Measuring noise is descriptive. The claim worth making is what the noise *costs*, and nobody
-can run that counterfactual — there is no clean version of DROID to compare against. So go the
-other way: inject known noise, train at each level, fit the degradation curve, then use it to
-convert a measured rate into a predicted cost.
+### 3. How much of "semantic agreement" is just shared vocabulary?
 
-Three noise modes, because the literature conflates them: `swap` (pipeline bugs — preserves
-the label distribution), `shuffle` (the upper bound on damage), and `paraphrase` (the control
-that separates real label noise from mere lexical variation).
+This is the decomposition the TF-IDF arm exists to provide, and it cuts both ways:
 
-## Quickstart
+- **0.63 is reachable by vocabulary overlap alone** — a bag-of-words method with no notion of
+  meaning. Under every lexical variant tried (char 3–5-grams reach 0.6697 at best; word
+  1–2-grams 0.5441) the floor stays ≥0.14 below the neural band.
+- **≈0.18 requires meaning.** That increment is real and robust, but the honest framing is
+  "most of the agreement is lexical, and a substantial minority is not" — not "agreement is
+  semantic, full stop."
+
+### 4. Site-level variation exceeds sampling noise
+
+The ten collection sites span **0.767 to 0.887** in per-site α — an order of magnitude wider
+than any individual site's confidence interval (~0.011 wide). Something real differs between
+labs.
+
+Adversarial verification sharpened what may be claimed about *which* sites:
+**GuptaLab is robustly the highest** (P(argmax) ≈ 1.000 in every encoder arm, CI disjoint from
+the runner-up, surviving tie-rate, annotation-length and sample-size confound checks). The low
+end is a **{CLVR, RAIL} cluster**, not a single identifiable site — P(CLVR is the true minimum)
+is only 0.73, and the ordering flips under a tie-removal sensitivity check. Agreement across
+five encoder arms is *not* five independent confirmations, because all arms score the same
+episodes.
+
+---
+
+## Two methodological findings that generalize beyond this dataset
+
+These are the transferable results, and both are warnings.
+
+### Per-episode embedding rankings are ~50% encoder-dependent at the tail
+
+Aggregate embedding statistics over a corpus are robust. **Per-episode rankings built from the
+same embeddings are not.** Between encoders that agree on the corpus-level α to within 0.012,
+the top-200 "worst episode" lists share only **47–57%** of their members, and ordering *within*
+the tail is nearly uncorrelated (tail-only Spearman 0.06–0.31). What does transfer is
+neighbourhood membership: 93–99% of one encoder's top-200 falls inside another's top-2000.
+
+The general form: **an aggregate statistic being encoder-robust says nothing about the tail of
+a per-item ranking being encoder-robust.** Any pipeline that ranks items by embedding
+disagreement and consumes a top-k list — data-cleaning worklists, active-learning queues,
+"worst examples" tables — inherits roughly 50% churn at the tail from encoder choice alone,
+and that churn is invisible if only the aggregate is checked. This applies to the
+`worst_episodes` list this project itself produced in its first session, which is
+single-encoder; treat it as a sample from a high-disagreement pool, not as a ranking.
+
+### Neighbourhood-disagreement detectors are blind to *correlated* label errors
+
+A natural way to hunt for mislabeled episodes is to flag those whose label disagrees with the
+labels of their nearest neighbours in embedding space. That method has a structural blind spot,
+and it is the one that matters in practice.
+
+When a group of episodes shares the *same* wrong label — one annotator with a consistent
+misconception, one template applied to the wrong batch, one scripted relabel — the corrupted
+episodes' neighbours carry that same wrong label, so neighbourhood disagreement is **zero by
+construction**. Under injected correlated corruption of exactly this kind, detection falls to
+**chance: ROC AUC 0.487–0.511, precision@50 of 0.03–0.19.**
+
+This is a property of the method family, not of any encoder, distance metric, or ensemble. It
+applies wherever mislabeling is batched rather than independent — which is how real annotation
+pipelines fail. **The method finds isolated label errors and is blind to systematic ones.**
+
+---
+
+## Limitations, stated up front
+
+- **The α ≥ 0.80 reliability convention comes from categorical content analysis.** Its transfer
+  to a continuous cosine-distance metric is an assumption, not a calibrated fact. Treat "0.81
+  clears the threshold" as suggestive, and prefer the comparative structure to the absolute
+  number.
+- **Encoder choice contributes ~4× the sampling uncertainty.** Never quote a single arm's CI as
+  the uncertainty on α ≈ 0.81.
+- **The band is scoped to contrastive sentence encoders.** It rules out "MiniLM artifact", not
+  "sentence-encoder-family artifact".
+- **A cross-modal audit was attempted and did not validate.** See below — the negative result is
+  reported in full rather than dropped.
+- **Degenerate agreement inflates α.** 103 of the 115 episodes containing a non-answer have all
+  three annotators writing "No action". These are perfectly-agreeing units with no instruction
+  to agree about. They are kept in the headline, reported as a robustness row, and the episode
+  list is released — silently dropping them would measure a corpus nobody trains on.
+- **The DROID annotation file is sorted** (all triple-annotated episodes first, then all
+  singles), so `--limit N` is never a random sample and its output must not be quoted as an
+  estimate of the full-file number.
+- **No human base-rate audit has been done.** Nobody has hand-checked a random sample of DROID
+  episodes against their instructions. Without that denominator, no detector's precision can be
+  honestly evaluated — including any built here.
+- **The novelty claim above predates submission.** This area moves monthly; the search should be
+  re-run before any preprint.
+
+## The cross-modal audit: a negative result
+
+A second stage tried to move from "do annotators agree with each other" to "does the label
+describe what the camera saw", using LIBERO (1,693 episodes, 546,930 images embedded with
+DINOv2 ViT-S/14 and CLIP ViT-B/32). **It did not validate, and the reason is about the corpus,
+not about the idea.**
+
+LIBERO has 40 instructions in bijection with 40 `task_index` classes and near-bijection with
+scene identity. Under that structure, "language neighbourhood" reduces exactly to "`task_index`
+equality class", and the whole cross-modal apparatus collapses into a lookup. **LIBERO cannot
+discriminate the hypothesis under test from the null "the dataset has 40 blocks."** It is also
+confounded on a second axis: its instructions are the task definitions that generated its
+scripted simulated demonstrations, so its true label-noise rate is ≈0 and there is nothing real
+to find. Precision can only be assessed against planted errors, and the planted error that is
+natural to inject is precisely the trivially-detectable case.
+
+**LIBERO therefore cannot validate this class of method.** The right conclusion is that the
+validation corpus was structurally unsuitable — not that cross-modal auditing has been shown to
+fail in general. DROID, with 64,516 unique strings and no `task_index`, has neither pathology;
+whether the approach works there is **untested**.
+
+Every quantitative result from that stage is specific to LIBERO's block structure and is
+deliberately **not** reported here as a finding about DROID or about the method in general. The
+full record, including what was refuted and why, is in [`results/stage-B.md`](results/stage-B.md).
+The one result from that stage that *does* generalize — correlated-error blindness — is stated
+in the section above.
+
+---
+
+## Reproducing this
+
+Requires Python ≥3.10 (a 3.11 virtualenv is what this was developed against). Embeddings are
+cached to `data/`; nothing under `data/` is committed.
 
 ```bash
-pip install -e .
-pytest -q                            # 50 tests
-python scripts/demo_synthetic.py     # end-to-end on a corpus with planted noise
-python scripts/droid_agreement.py    # the real thing: DROID's annotator agreement
+python -m venv .venv && .venv/bin/pip install -e ".[dev]"
+.venv/bin/python -m pytest -q          # expect 50 passed
 ```
 
-`scripts/droid_agreement.py` needs no video. DROID publishes its language annotations as a
-separate **12 MB JSON**, so the entire first result comes from a file you can download over
-coffee. Pass `--limit 2000` for a smoke test before the full run.
+**Stage A — agreement and encoder robustness.** The annotation file (~12 MB) downloads
+automatically on first run, with a `gsutil` fallback printed if the download fails.
 
-At corpus scale the textbook formulation of alpha would need a 150,000 x 150,000 distance
-matrix — **90 GB**. `scalable.py` avoids it: observed disagreement only involves within-episode
-pairs, and expected disagreement has a closed form under squared cosine distance
-(`sum_ij (1-s_ij)^2 = n^2 - 2||sum_i x_i||^2 + ||X^T X||_F^2`), which costs O(n d^2) time and a
-384x384 matrix of memory. Exact, not approximate — the tests pin it against the naive
-implementation to 1e-10. Full DROID scale runs in about 4 seconds.
+```bash
+# baseline agreement on the full corpus (semantic + nominal alpha, per-lab, worst episodes)
+.venv/bin/python scripts/droid_agreement.py
 
-The demo builds a corpus with a **known 18.7% of labels deliberately corrupted** and checks
-the audit can find them. It can:
+# annotation defect classes (truncation, junk, non-answers, punctuation)
+.venv/bin/python scripts/annotation_quality.py
 
-```
-semantic alpha  0.9991      string alpha  0.0000     <- paraphrase, not disagreement
-alignment as-labelled: overlap 0.120, MI  3.57 nats
-alignment if clean:    overlap 0.187, MI 16.80 nats  <- noise is visible in the geometry
-top 10% most suspect: precision 100.0%, recall 53.6%
-top 20% most suspect: precision  80.8%, recall 86.6%   (random baseline 18.7% -> 4.33x lift)
+# encoder robustness: embed once per encoder (resumable, cached), then analyze
+.venv/bin/python scripts/encoder_robustness.py --embed-only --encoder mpnet
+.venv/bin/python scripts/encoder_robustness.py --embed-only --encoder gte
+.venv/bin/python scripts/encoder_robustness.py --embed-only --encoder bge-l
+.venv/bin/python scripts/encoder_robustness.py --analyze
 ```
 
-## Status
+Use `--limit N` for a fast smoke run, but **never quote a `--limit` number as a corpus
+estimate** — the file is sorted, so it is not a random sample.
 
-Statistical core complete and tested. No real-dataset results yet — nothing here should be
-read as a finding about DROID or any other corpus.
+**Cross-modal stage (LIBERO).** Downloads ~1.9 GB and embeds 546,930 images (~87 min on an
+M2 Pro across both encoders).
+
+```bash
+.venv/bin/python scripts/libero_embed.py --check-mps --encoder dinov2   # MPS/CPU agreement check
+.venv/bin/python scripts/libero_embed.py --encoder dinov2
+.venv/bin/python scripts/libero_embed.py --encoder clip
+.venv/bin/python scripts/libero_crossmodal.py --build-views
+.venv/bin/python scripts/libero_crossmodal.py --analyze
+```
+
+## How this repository is organised
+
+| Path | What it is |
+|---|---|
+| `vla_label_audit/` | The statistical core. `agreement.py` is the naive reference implementation; `scalable.py` computes the identical quantity in O(n·d²) via a closed form (the textbook N×N difference matrix would be 90 GB at DROID scale). `crossmodal.py` holds the cross-view diagnostics. |
+| `scripts/` | Analyses. Nothing here is imported by the package. |
+| `results/` | Stage reports, including what was refuted and what could not be verified. |
+| `tests/` | 50 tests. Several are correctness claims, not smoke checks — one pins the fast α path to the naive one at 1e-10, one guards a bug that allocated 59 GB, one validates an analytic power formula against simulation. |
+| `data/` | Caches and downloads. Gitignored in its entirety. |
+
+Every result in this repository was produced by one agent and then attacked by separate
+adversarial verifiers instructed to refute it and to default to "refuted" when uncertain.
+Findings that did not survive are recorded alongside those that did; see `results/` and
+`LOG.md`.
 
 ## License
 
-MIT.
+MIT — see [LICENSE](LICENSE).
