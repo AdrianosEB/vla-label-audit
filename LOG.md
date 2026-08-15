@@ -86,3 +86,16 @@ instructions across task suites, report ROC/AUC and precision@50) to measure rec
 the method; this is a deliberate addition to the brief and is flagged at Gate B. Embedding
 executor dispatched: DINOv2 ViT-S/14 (primary, self-supervised) + CLIP ViT-B/32 (ensemble partner,
 language-supervised — noted as partly circular for judging image-label match, so DINOv2 leads).
+
+**2026-08-15 — Label-swap calibration approved; three owner additions.** (1) The
+synthetic-in-simulation caveat is to be stated plainly as the **top** limitation in
+`results/stage-B.md` and any writeup — LIBERO has no real annotation noise to find, planted
+cross-suite swaps are easier than plausible-but-wrong human labels, so any AUC/precision reported
+is an upper bound on real-world performance and must be described as one. (2) Report
+**precision@50 and precision@200 separately** — Gate A showed the tail is where ranking
+instability lives, so a lone top-50 figure would flatter the method. (3) Time-boxed probe of
+`lerobot/droid_100` (~30 min hard budget) dispatched as a qualitative real-human-annotation
+sanity check, not a ranking study; if it exceeds budget it is skipped and recorded as untested.
+The probe also checks two things worth knowing regardless: whether the LeRobot conversion
+preserved DROID's `language_instruction_2`/`_3` multi-annotator fields, and whether its episodes
+can be joined to our 50,092-episode annotation corpus by episode key.

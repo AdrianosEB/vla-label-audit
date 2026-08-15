@@ -192,14 +192,28 @@ at Gate B.
   rank; report **cross-validated / held-out** canonical correlations, not in-sample ones.
 - `neighborhood_disagreement` → the ranked suspect list, **rank-averaged across DINOv2 and
   CLIP** per the Gate A decision, never taken from one encoder.
-- **NEW — synthetic label-swap validation.** LIBERO's instructions are task definitions used to
-  generate scripted simulated demos, so its natural label-noise rate is ≈0 by construction. An
-  audit run on it therefore measures detector **specificity** (how many episodes it flags in a
-  corpus that has almost nothing to find), not detection ability. To measure **recall**, swap
-  instructions between a held-out sample of episodes across task suites, re-run the detector,
-  and report ROC/AUC and precision@50 for recovering the swapped ones. This turns Stage B from
-  a descriptive run into a calibration of the method itself, and it is what makes Stage C's
-  noise-injection interpretable.
+- **NEW — synthetic label-swap validation** (approved). LIBERO's instructions are task
+  definitions used to generate scripted simulated demos, so its natural label-noise rate is ≈0
+  by construction. An audit run on it therefore measures detector **specificity** (how many
+  episodes it flags in a corpus that has almost nothing to find), not detection ability. To
+  measure **recall**, swap instructions between a held-out sample of episodes across task
+  suites, re-run the detector, and report ROC/AUC for recovering the swapped ones, plus
+  **precision@50 and precision@200 reported separately** — Gate A established that the tail is
+  exactly where ranking instability lives, so a single top-50 number would flatter the method.
+  This turns Stage B from a descriptive run into a calibration of the method itself, and it is
+  what makes Stage C's noise-injection interpretable.
+
+  **Top limitation, to be stated plainly in `results/stage-B.md` and in any writeup, not
+  buried in a limitations section:** the cross-modal detector is calibrated on *synthetic*
+  errors in *simulation*. LIBERO has no real annotation noise to find, and planted
+  cross-suite instruction swaps are almost certainly easier to detect than the subtle,
+  plausible-but-wrong human labels the method is ultimately aimed at. Any AUC or precision
+  reported here is an **upper bound** on real-world performance, and must be described as one.
+
+- **Qualitative real-data spot-check — `lerobot/droid_100`** (100 real DROID episodes, time-boxed
+  to ~30 min; skipped and recorded as untested if more expensive). Not a ranking study and not
+  powered for one: purely a check that the detector behaves sanely on real human annotations
+  rather than only on planted swaps. Report what it showed, or report that it was not run.
 - **Cannot run:** LIBERO's own annotator agreement. The dataset has one instruction per task
   and no annotator fields, so there is no comparator for DROID's α under the identical
   statistic. Reported as impossible; no proxy substituted.
@@ -214,7 +228,9 @@ Is the cross-modal alignment strong, weak, or absent? Does the suspect ranking s
 inspection? ~~What is LIBERO's α next to DROID's 0.8125?~~ — not answerable, LIBERO has no
 multiple annotations (see above). Replacement question, which is the more useful one:
 **does the embedding-distance label detector actually work?** Report its specificity on
-unmodified LIBERO and its ROC/AUC and precision@50 against injected instruction swaps.
+unmodified LIBERO and its ROC/AUC, **precision@50 and precision@200 separately**, against
+injected instruction swaps — with the synthetic-errors-in-simulation caveat stated as the
+headline limitation, and the `droid_100` real-data spot-check reported or marked untested.
 
 ---
 
