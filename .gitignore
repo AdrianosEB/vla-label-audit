@@ -11,3 +11,8 @@ data/
 .venv/
 venv/
 .DS_Store
+
+# Derived inspection artifacts: 29 MB of contact sheets, regenerable with
+# `scripts/libero_crossmodal.py --contact-sheets`. The findings from inspecting
+# them live in results/stage-B.md; the images themselves do not belong in git.
+results/suspects/
