@@ -19,7 +19,7 @@ annotations, of which 37,592 episodes are triple-annotated and 12,500 are single
 
 | Quantity | Value |
 |---|---|
-| Semantic α (MiniLM-L6-v2) | **0.8125**, 95% CI [0.8109, 0.8140] |
+| Semantic α (MiniLM-L6-v2) | **0.8125**, 95% CI [0.8107, 0.8140] |
 | Nominal α (exact string) | 0.0536 |
 | Paraphrase gap | 0.7589 |
 | Observed disagreement `D_o` | 0.0890 |
@@ -28,8 +28,38 @@ annotations, of which 37,592 episodes are triple-annotated and 12,500 are single
 | Effective rank of instruction space | 236.8 of 384 dims |
 
 **Per lab** — each with its own episode-clustered bootstrap CI. CLVR +0.7667 [0.7612, 0.7724]
-through GuptaLab +0.8867 [0.8813, 0.8920]; the extremes do not overlap. That pair was selected
-post hoc from 10 labs and is **not** a multiplicity-corrected test — suggestive only.
+through GuptaLab +0.8867 [0.8813, 0.8920]. **Refined by Stage A verification:** GuptaLab-highest
+is robust (P(argmax) ≈ 1.000 in every encoder arm; survives tie-rate, length, and sample-size
+confound checks), but CLVR-lowest is **not** — P(CLVR = argmin) is only 0.73 under MiniLM, RAIL's
+CI nearly coincides, and the ordering flips under a tie-removal sensitivity check. Cross-lab
+claims must be worded at cluster resolution: GuptaLab uniquely on top, {CLVR, RAIL} the low
+cluster. "Lowest in all five encoder arms" is not five independent confirmations — the arms share
+the same episodes' sampling noise.
+
+**Stage A (encoder robustness) — measured on the full corpus, adversarially verified.** Full
+table and verifier verdicts in `results/stage-A.md`; raw output in `data/encoder_robustness.json`.
+
+| Encoder | Semantic α | 95% CI | D_e | Gap |
+|---|---|---|---|---|
+| MiniLM-L6-v2 (384d) | 0.8125 | [0.8107, 0.8140] | 0.4749 | 0.7589 |
+| mpnet-base-v2 (768d) | 0.8218 | [0.8200, 0.8235] | 0.4132 | 0.7682 |
+| gte-base (768d) | 0.8095 | [0.8078, 0.8110] | 0.0400 | 0.7559 |
+| bge-large-en-v1.5 (1024d) | 0.8165 | [0.8146, 0.8180] | 0.1454 | 0.7628 |
+| TF-IDF floor (2442d) | 0.6310 | [0.6285, 0.6334] | 0.8176 | 0.5774 |
+
+- Neural band width 0.0123 → the absolute α ≈ 0.81 is reportable, quoted with the band (not any
+  single CI — encoder choice contributes ~4× the sampling uncertainty) and scoped to
+  contrastive sentence-encoder families.
+- α does not track anisotropy: D_e spans 20× while neural α moves 0.012; fp16 effects < 1e-5.
+- Paraphrase gap survives every encoder (0.756–0.768); not a case/punctuation or duplicate-string
+  artifact (nominal α ≈ 0.000 on tie-free episodes while semantic α stays 0.79–0.80).
+- Identical-string ties are 5.4% of within-episode pairs; removing tied episodes lowers α ~0.018
+  uniformly and leaves the band width unchanged.
+- **Per-episode worklists are only neighborhood-stable across encoders**: top-200 overlap
+  47–57%, tail-only Spearman 0.06–0.31, but 93–99% of any top-200 lies in another encoder's
+  top-2000. Suspect lists are a high-disagreement *pool*, not a precise ranking.
+- Gate A premise check: **WEAKENED** — the paraphrase-gap thesis holds, but Stage B's
+  per-episode-ranking method inherits the instability above; see the revision note in Stage B.
 
 **Defect classes and their cost to α**
 
@@ -72,7 +102,7 @@ and excluding it drops 91% of the corpus. Do not report it as comparable to the 
 
 ---
 
-## Stage A — encoder robustness  ⬅ current
+## Stage A — encoder robustness  ✅ complete (Gate A: WEAKENED — see state above and `results/stage-A.md`)
 
 **Full brief: `NEXT_TASK.md`.** Summary: every number above lives in MiniLM's geometry. Re-run
 across 4–5 genuinely different encoders plus a **TF-IDF floor**, and measure whether the
@@ -100,6 +130,14 @@ if the embedding-distance approach is shakier than it looks, that has to be know
 
 *Only after Gate A.* Goal: move from "do annotators agree with each other" to "does the label
 describe the trajectory".
+
+**Brief revision required by Gate A (premise WEAKENED):** per-episode embedding-disagreement
+rankings are only neighborhood-stable across encoders (top-200 overlap 47–57%), and cross-modal
+text–image spaces are likely less stable than the same-modality encoders tested. Do **not** draw
+the suspect list from a single encoder's ranking: use a consensus/ensemble rank or intersection
+of top-N lists across ≥2 vision-language encoders, treat tail *membership* as the operative
+guarantee, and budget the manual inspection expecting roughly half of any single-model top-50 to
+be encoder-specific noise.
 
 **Dataset: `lerobot/libero`** — 1.94 GB, 1,693 episodes, 273,465 frames, 2 cameras (546,930
 images), 40 distinct instructions. Not the 69.86 GB or 34.94 GB variants; identical content,
