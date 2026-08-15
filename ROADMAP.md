@@ -210,10 +210,27 @@ at Gate B.
   plausible-but-wrong human labels the method is ultimately aimed at. Any AUC or precision
   reported here is an **upper bound** on real-world performance, and must be described as one.
 
-- **Qualitative real-data spot-check — `lerobot/droid_100`** (100 real DROID episodes, time-boxed
-  to ~30 min; skipped and recorded as untested if more expensive). Not a ranking study and not
-  powered for one: purely a check that the detector behaves sanely on real human annotations
-  rather than only on planted swaps. Report what it showed, or report that it was not run.
+- **Qualitative real-data spot-check — `lerobot/droid_100`: NOT RUN, recorded as untested.**
+  Probed 2026-08-15 (metadata only, 2.85 MB in 6.8 s). Two independent reasons, the second
+  decisive:
+  - *Cost:* the 461 MB of video would take ~61 min at a measured 123–132 KB/s — 2× the 30-min
+    budget — so the download was aborted. Caveat: that rate is unauthenticated on a link
+    contended by an unrelated training job; an `HF_TOKEN` could change it materially.
+  - *Content (the real blocker):* the conversion **does not preserve DROID's multi-annotator
+    structure** — 0 of 100 episodes carry more than one instruction, and there is no
+    `language_instruction_2`/`_3` field. Worse, **54 of the 100 episodes have an empty-string
+    instruction**; only 46 carry any text. No episode identifier (lab, recorder id, timestamp,
+    path, uuid) is exposed, so joining back to our 50,092-episode corpus is possible only by
+    instruction text: 26 unique-by-text matches (plausible but unverifiable), 20 ambiguous,
+    54 unjoinable. So droid_100 contributes no annotation signal we do not already have, and
+    downloading its video would buy at most 26 text-joined episodes.
+
+  **Side finding, worth its own line and not yet generalised:** a widely-used LeRobot conversion
+  of DROID silently drops the multi-annotator fields and blanks 54% of its instructions. That is
+  a label-quality defect in the tooling layer, directly on this project's topic. It is **not**
+  established that the full `lerobot/droid` conversion shares it — droid_100 is a 100-episode
+  sample repo, and checking the full conversion's metadata is a cheap open follow-up, not a
+  claim. Do not state the generalisation without running that check.
 - **Cannot run:** LIBERO's own annotator agreement. The dataset has one instruction per task
   and no annotator fields, so there is no comparator for DROID's α under the identical
   statistic. Reported as impossible; no proxy substituted.

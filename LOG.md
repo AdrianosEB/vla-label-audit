@@ -99,3 +99,19 @@ sanity check, not a ranking study; if it exceeds budget it is skipped and record
 The probe also checks two things worth knowing regardless: whether the LeRobot conversion
 preserved DROID's `language_instruction_2`/`_3` multi-annotator fields, and whether its episodes
 can be joined to our 50,092-episode annotation corpus by episode key.
+
+**2026-08-15 — droid_100 spot-check NOT RUN; recorded as untested. Failed on content, not cost.**
+Metadata probe was cheap (2.85 MB, 6.8 s; LeRobot v3.0, 100 episodes, 32,212 frames, 3 cameras,
+fps 15, 180x320 AV1 — note the hub README is stale v2.0 text and should not be trusted). The
+461 MB of video would have taken ~61 min at a measured 123–132 KB/s, 2x the budget, so it was
+aborted — though that rate is unauthenticated on a link contended by an unrelated training job,
+and an HF_TOKEN might change it. The decisive reason is content, not cost: **0 of 100 episodes
+have more than one annotation** (no `language_instruction_2`/`_3` field survived the conversion),
+and **54 of 100 have an empty-string instruction** — only 46 carry text. No episode identifier is
+exposed, so a join back to our corpus is text-only: 26 unique-by-text (unverifiable), 20
+ambiguous, 54 unjoinable. droid_100 therefore adds no annotation signal we lack, and its video
+would buy at most 26 text-joined episodes. **Side finding, deliberately not generalised:** a
+widely-used LeRobot conversion of DROID drops the multi-annotator fields and blanks 54% of
+instructions — a label-quality defect in the tooling layer, squarely on this project's topic.
+Whether the full `lerobot/droid` conversion shares it is UNCHECKED and must not be asserted;
+verifying it costs one cheap metadata pull and is logged as an open follow-up for the owner.
