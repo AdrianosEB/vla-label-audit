@@ -145,8 +145,24 @@ and budget the manual inspection expecting roughly half of any single-model top-
 encoder-specific noise.
 
 **Dataset: `lerobot/libero`** — 1.94 GB, 1,693 episodes, 273,465 frames, 2 cameras (546,930
-images), 40 distinct instructions. Not the 69.86 GB or 34.94 GB variants; identical content,
-PNG-in-parquet instead of AV1 video.
+images), 40 distinct instructions. Not the 69.86 GB or 34.94 GB variants. **Acquired and verified
+2026-08-15**; every count matches exactly. Storage is **AV1 MP4 (LeRobot v3.0)**, not
+PNG-in-parquet as previously recorded here — see the correction in `CLAUDE.md`. Decode is cheap
+(~2,400 img/s sequential); parquet holds state/action/index only.
+
+**Two structural facts discovered on acquisition, which change what Stage B can measure:**
+
+1. **LIBERO has no multiple annotations per episode** — one instruction per task_index, one
+   task_index per episode, no annotator fields anywhere. The planned "run LIBERO's own annotator
+   agreement so DROID has a comparator under the identical statistic" is therefore **impossible**,
+   not merely inconvenient. Report as impossible; do not substitute a proxy.
+2. **Only 40 distinct instructions across 1,693 episodes** (29/44/50 episodes per instruction,
+   min/median/max). The language view has at most 40 unique vectors, so per-episode language
+   nearest-neighbours are ties among ~29–50 identical strings and a k-NN Jaccard `neighborhood_
+   overlap` between visual and language views is largely degenerate as specified. LIBERO is the
+   *templated* extreme — the RT-1 pathology, the opposite of DROID's. Stage B's measurements are
+   reframed accordingly (below); this deviation from the original brief is deliberate and is
+   reported at Gate B.
 
 **Encoder: DINOv2 ViT-S/14** (384-d). Not ViT-B/14 — 16 GB is *unified* memory shared with the
 GPU. Estimated 1–2 hours for the full corpus on this machine, once. **Cache embeddings to disk
@@ -158,18 +174,35 @@ happen twice.
 (`faiss-cpu`, `IndexFlatIP`), not approximate: at this scale brute force is minutes and under a
 gigabyte, and exactness removes the "did ANN recall cause that?" objection pre-emptively.
 
-**Measure** (functions already exist in `vla_label_audit.crossmodal`):
+**Measure** — reframed for the 40-instruction structure; functions exist in
+`vla_label_audit.crossmodal`. Deviations from the original brief are marked and are reported
+at Gate B.
 
-- `compressibility`-style diagnostics on the visual token block first — headroom before method.
-- `neighborhood_overlap` between visual and language views. **This is the headline of Stage B.**
-  If an episode's visual neighbours are not its language neighbours, the labels are not
-  describing what the camera saw.
-- `rank_correlation_across_views` — the same question over the whole geometry, not just top-k.
-- `cca_alignment` — is there *any* linear map aligning the two? Canonical correlations near zero
-  is a much stronger negative than low local overlap.
-- `neighborhood_disagreement` — the ranked suspect list.
-- Run LIBERO's own annotator agreement too, if it has multiple annotations, so DROID has a
-  comparator under the identical statistic.
+- `effective_rank` / spectral diagnostics on the visual block first — headroom before method.
+- **Visual-neighbourhood task purity — the headline of Stage B, replacing the planned
+  language-vs-visual `neighborhood_overlap`.** For each episode, the fraction of its k visual
+  nearest neighbours sharing its `task_index`, against the chance baseline (~2.6%, group-size
+  weighted). This asks the intended question — does the label describe what the camera saw —
+  in the only form the language view can support, since 40 unique instruction strings make
+  k-NN Jaccard between views a tie-breaking artifact rather than a measurement. Report
+  `neighborhood_overlap` as well, explicitly labelled degenerate, so the reason is on record.
+- `rank_correlation_across_views` — whole-geometry version. Valid here, with the caveat that
+  language pairwise distances take only ~40×40 distinct values.
+- `cca_alignment` — rank-limited to 40 by the language side and prone to overfitting at that
+  rank; report **cross-validated / held-out** canonical correlations, not in-sample ones.
+- `neighborhood_disagreement` → the ranked suspect list, **rank-averaged across DINOv2 and
+  CLIP** per the Gate A decision, never taken from one encoder.
+- **NEW — synthetic label-swap validation.** LIBERO's instructions are task definitions used to
+  generate scripted simulated demos, so its natural label-noise rate is ≈0 by construction. An
+  audit run on it therefore measures detector **specificity** (how many episodes it flags in a
+  corpus that has almost nothing to find), not detection ability. To measure **recall**, swap
+  instructions between a held-out sample of episodes across task suites, re-run the detector,
+  and report ROC/AUC and precision@50 for recovering the swapped ones. This turns Stage B from
+  a descriptive run into a calibration of the method itself, and it is what makes Stage C's
+  noise-injection interpretable.
+- **Cannot run:** LIBERO's own annotator agreement. The dataset has one instruction per task
+  and no annotator fields, so there is no comparator for DROID's α under the identical
+  statistic. Reported as impossible; no proxy substituted.
 
 **Then do the unglamorous thing:** manually inspect the top ~50 suspects and classify them —
 wrong label, genuinely rare behaviour, or detector artifact. Report the precision. An
@@ -178,7 +211,10 @@ unvalidated ranked list is a claim, not a result.
 ### Gate B — stop and report
 
 Is the cross-modal alignment strong, weak, or absent? Does the suspect ranking survive human
-inspection? What is LIBERO's α next to DROID's 0.8125?
+inspection? ~~What is LIBERO's α next to DROID's 0.8125?~~ — not answerable, LIBERO has no
+multiple annotations (see above). Replacement question, which is the more useful one:
+**does the embedding-distance label detector actually work?** Report its specificity on
+unmodified LIBERO and its ROC/AUC and precision@50 against injected instruction swaps.
 
 ---
 

@@ -64,3 +64,25 @@ brief: acquire `lerobot/libero` (1.94 GB), embed 546,930 images with DINOv2 ViT-
 second vision encoder for the ensemble, build the joint exact-search index, run the
 crossmodal battery, rank suspects by cross-encoder rank-average, inspect top ~50, verify
 adversarially, premise-check, stop at Gate B.
+
+**2026-08-15 — LIBERO acquired; two structural facts force a Stage B redesign.** Download
+verified: 1,693 episodes / 273,465 frames / 2 cameras / 546,930 images / 40 instructions — every
+count matches the recorded expectation exactly. Two corrections and two consequences. (a) The
+docs recorded `lerobot/libero` as "PNG-in-parquet instead of AV1 video"; that is **wrong** — it is
+LeRobot v3.0 with AV1 MP4 video, parquet holding only state/action/index. The dataset choice
+stands (smallest variant, counts exact); only the stated reason was wrong, and it is corrected in
+`CLAUDE.md`. Decode turned out cheap anyway: ~2,400 img/s sequential via libdav1d, ~4 CPU-min for
+the whole corpus, though sequential whole-file decode is ~200x cheaper than per-frame seeking.
+(b) **LIBERO has no multiple annotations per episode** — the planned DROID comparator α is
+impossible, not merely awkward; reported as impossible, no proxy. (c) **Only 40 distinct
+instructions across 1,693 episodes** (29/44/50 per instruction) — the language view has ≤40 unique
+vectors, so the planned language-vs-visual k-NN Jaccard `neighborhood_overlap` is largely a
+tie-breaking artifact. Headline measurement reframed to **visual-neighbourhood task purity**
+against a ~2.6% chance baseline, with the degenerate overlap still reported so the reason is on
+record. (d) Because LIBERO's instructions are the task definitions that generated scripted
+simulated demos, its natural label-noise rate is ≈0 by construction — an audit there measures
+detector *specificity*, not detection ability. Added a **synthetic label-swap validation** (swap
+instructions across task suites, report ROC/AUC and precision@50) to measure recall and calibrate
+the method; this is a deliberate addition to the brief and is flagged at Gate B. Embedding
+executor dispatched: DINOv2 ViT-S/14 (primary, self-supervised) + CLIP ViT-B/32 (ensemble partner,
+language-supervised — noted as partly circular for judging image-label match, so DINOv2 leads).

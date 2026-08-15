@@ -89,7 +89,11 @@ on model performance.
 - Apple M2 Pro, 12 cores, **16 GB unified memory**, macOS 26.5, ~530 GB free.
 - MPS works. **`is_amp_available("mps")` is `False`** — training is fp32, no autocast.
 - **M2 has no AV1 hardware decode** (Apple added it in M3). LIBERO is AV1. Decode once, cache
-  embeddings to disk immediately, never decode twice.
+  embeddings to disk immediately, never decode twice. **Measured 2026-08-15:** software decode
+  via PyAV/libdav1d runs at ~2,300–2,500 img/s sequentially at 256×256, so the full 546,930-image
+  corpus is ~4 CPU-minutes — the lack of hardware decode turned out not to bite. But *sequential
+  whole-file* decode is ~200× cheaper per frame than per-frame keyframe seeking, so iterate video
+  files once in order; never seek per frame.
 - Python 3.11 in `.venv`. **LeRobot requires ≥3.12** — that install is a session-2 prerequisite.
 - `faiss-cpu` has an arm64 wheel and works; `hnswlib` is sdist-only and will try to compile.
 - There is a known historical MPS bug where `.to(device, non_blocking=True)` returned garbage
@@ -98,9 +102,14 @@ on model performance.
 
 ## Choices already made for session 2 — do not re-litigate without asking
 
-- **Dataset: `lerobot/libero`** (1.94 GB, 273,465 frames, 546,930 images, 40 instructions).
-  NOT `HuggingFaceVLA/libero` (69.86 GB) or `physical-intelligence/libero` (34.94 GB) — same
-  content, PNG-in-parquet instead of AV1 video.
+- **Dataset: `lerobot/libero`** (1.94 GB, 1,693 episodes, 273,465 frames, 546,930 images, 40
+  instructions). NOT `HuggingFaceVLA/libero` (69.86 GB) or `physical-intelligence/libero`
+  (34.94 GB). **Correction, 2026-08-15:** the note that this variant is "PNG-in-parquet instead
+  of AV1 video" was **wrong**. Downloaded and verified: it is LeRobot **v3.0** with images stored
+  as **AV1 MP4** (37 files per camera, many episodes concatenated per file); the parquet files
+  hold only state/action/index columns. The dataset choice itself stands — all counts match
+  exactly and it is the smallest variant — only the stated reason was incorrect. Decode cost is
+  negligible in practice (see the AV1 note above).
 - **Encoder: DINOv2 ViT-S/14** (384-d), not ViT-B/14 (768-d). Halves both embedding time and
   index memory, which matters on 16 GB of *unified* memory shared with the GPU.
 - **Never ACT, Diffusion Policy, or SmolVLA fine-tuning.** Reported at **13+ hours per run** on
