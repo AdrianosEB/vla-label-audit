@@ -299,10 +299,11 @@ measurement, and nothing in the audit depends on it.
 | `tests/` | 50 tests. Several are correctness claims, not smoke checks — one pins the fast α path to the naive one at 1e-10, one guards a bug that allocated 59 GB, one validates an analytic power formula against simulation. |
 | `data/` | Caches and downloads. Gitignored in its entirety. |
 
-Every result in this repository was produced by one agent and then attacked by separate
-adversarial verifiers instructed to refute it and to default to "refuted" when uncertain.
-Findings that did not survive are recorded alongside those that did; see `results/` and
-`LOG.md`.
+Every finding here was produced by one process and then attacked by independent adversarial
+verifiers instructed to refute it and to default to "refuted" when uncertain. Research
+decisions — study design, corpus choice, what to claim and at what scope — were made by the
+author at explicit review gates; two of the project's own hypotheses were killed that way.
+Findings that did not survive are recorded alongside those that did; see `results/`.
 
 ## License
 
